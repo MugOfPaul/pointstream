@@ -20,6 +20,7 @@ set(_target_libs
   ${PCL_GEOMETRY_LIBRARIES}
   ${PCL_IO_LIBRARIES}
   ${PCL_VISUALIZATION_LIBRARIES}
+  ${PCL_FILTERS_LIBRARIES}
 )
 
 set(_target_srcs 
