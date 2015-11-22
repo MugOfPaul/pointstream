@@ -5,7 +5,10 @@ if (NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Release)
 endif()
 
-project(TelePort)
+project(PointStream)
+
+include(CMake/asio.cmake)
+include(CMake/helpers.cmake)
 
 if (APPLE)
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")

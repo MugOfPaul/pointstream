@@ -1,4 +1,4 @@
-set(_target TeleportDriver)
+set(_target PointStreamDriver)
 
 
 find_package(PkgConfig)    # try find PKGConfig as it will be used if found
@@ -11,6 +11,7 @@ set(_target_includes
   .
   ..
   ${freenect2_INCLUDE_DIR}
+  ${asio_INCLUDE_DIR}
   ${PCL_INCLUDE_DIRS}
 )
 
@@ -21,10 +22,11 @@ set(_target_libs
   ${PCL_IO_LIBRARIES}
   ${PCL_VISUALIZATION_LIBRARIES}
   ${PCL_FILTERS_LIBRARIES}
+  ${PCL_FEATURES_LIBRARIES}
 )
 
 set(_target_srcs 
-  teleport_driver.cpp
+  pointstream_driver.cpp
   driver_kinect.cpp
 )
 

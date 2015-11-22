@@ -1,6 +1,6 @@
 #pragma once
 
-#include "teleport_types.h"
+#include "pointstream_types.h"
 
 class DriverInterface {
   public:
