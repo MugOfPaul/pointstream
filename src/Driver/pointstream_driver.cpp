@@ -1,6 +1,8 @@
 
 #include <iostream>
 #include <signal.h>
+#include <thread>    
+#include <mutex>    
 
 #include <pcl/common/common_headers.h>
 #include <pcl/point_types.h>
@@ -32,25 +34,46 @@
  *      Filtered: 1fps Raw: <1fps
  */
 
+
+//////////////////////////////////////////////////////////////////////////////
+ /**
+  * Module vars/globals
+  */
 sig_atomic_t Running = 1;
+std::thread threads[2];
+std::mutex filter_cloud_mutex;
 
-DriverInterface* interface = NULL;
-ColorPointCloudPtr raw_cloud = NULL;
-ColorPointCloudPtr filter_cloud = NULL;
-NormalCloudPtr cloud_normals = NULL;
-#define kCLOUD_ID "PointStream"
+// Networking
 
+// Point Cloud Source
+DriverInterface* interface = NULL;        // Our interface to whatever sensing device providing the point cloud
+ColorPointCloudPtr raw_cloud = NULL;      // Raw cloud from the interface
+ColorPointCloudPtr filter_cloud = NULL;   // Filtered cloud to be sent out
+NormalCloudPtr cloud_normals = NULL;      // estimated normals
+    
+// Visualizer 
 pcl::visualization::PCLVisualizer* viewer = NULL;
+const char* kCLOUD_ID = "PointStream";
 
-pcl::PassThrough<ColorPoint> passthroughFilter;
-
+//////////////////////////////////////////////////////////////////////////////
+/**
+ * Our Ctrl-C handler
+ **/
 void sigint_handler(int s) { Running = 0; }
 
+
+//////////////////////////////////////////////////////////////////////////////
+// Helper function to pack a 32-bit color
 inline float pack_color(uint8_t r, uint8_t g, uint8_t b) {
   int32_t rgb = ((uint32_t)r << 16 | (uint32_t)g << 8 | (uint32_t)b);
   return *reinterpret_cast<float*>(&rgb);
 }
 
+
+//////////////////////////////////////////////////////////////////////////////
+/**
+ * Set up the Visualizer
+ */
 void InitVisualizer() {
   viewer = new pcl::visualization::PCLVisualizer("PointStream Driver Visualizer");
   //viewer->addCoordinateSystem (1.0);
@@ -64,30 +87,12 @@ void InitVisualizer() {
   viewer->setShowFPS(true);  
 }
 
-void Startup() {
-  signal(SIGINT, sigint_handler);
 
-  interface = new DriverKinect;
-  raw_cloud = interface->Initialize();
-
-  filter_cloud = ColorPointCloudPtr(new ColorPointCloud);
-  cloud_normals = NormalCloudPtr(new NormalCloud);
-
-  InitVisualizer();
-}
-
-void Shutdown() {
-  std::cout << "Driver Shutdown." << std::endl;
-  if (viewer) {
-    viewer->close();
-    delete viewer;
-  }
-
-  if (interface)
-    delete interface;
-}
-
-void Loop() {
+//////////////////////////////////////////////////////////////////////////////
+/** 
+ * Our main loop for getting a raw point cloud and filtering it
+ */
+void DriverInterfaceLoop() {
 
   pcl::PassThrough<ColorPoint> pass;
   pass.setInputCloud(raw_cloud);
@@ -104,30 +109,82 @@ void Loop() {
   ne.setInputCloud(filter_cloud);
   ne.setSearchMethod (tree);
   ne.setRadiusSearch (0.03); // 3cm
-  
 
   while (Running == 1) {
     if (interface) {
         interface->Update();   
         
+        std::lock_guard<std::mutex> g(filter_cloud_mutex);
+
         pass.filter(*filter_cloud); 
         voxel.filter (*filter_cloud);
 
-        std::cout << "Cloud Points: " << raw_cloud->size() << "\t Filtered: " << filter_cloud->size() << std::endl;
-        ne.compute (*cloud_normals);
-    }
-
-    if (viewer) {
-      viewer->updatePointCloud(filter_cloud, kCLOUD_ID);
-      viewer->spinOnce(12);
+        //std::cout << "Cloud Points: " << raw_cloud->size() << "\t Filtered: " << filter_cloud->size() << std::endl;
+        //ne.compute (*cloud_normals);
     }
   }
 }
 
+
+//////////////////////////////////////////////////////////////////////////////
+/**
+ * Bootstrapping the processes and memory
+ */
+void Startup() {
+  signal(SIGINT, sigint_handler);
+
+  interface = new DriverKinect;
+  raw_cloud = interface->Initialize();
+
+  filter_cloud = ColorPointCloudPtr(new ColorPointCloud);
+  cloud_normals = NormalCloudPtr(new NormalCloud);
+
+  InitVisualizer();
+
+  threads[0] = std::thread(DriverInterfaceLoop);
+}
+
+
+//////////////////////////////////////////////////////////////////////////////
+/** 
+ * Releasing resources and memory
+ */
+void Shutdown() {
+  std::cout << "Driver Shutdown." << std::endl;
+
+  // Let the other threads sync up
+  threads[0].join();
+
+  // shut the visualizer down if we have one
+  if (viewer) {
+    viewer->close();
+    delete viewer;
+  }
+
+  // final clean up of the device interface
+  if (interface)
+    delete interface;
+}
+
+
+
+//////////////////////////////////////////////////////////////////////////////
 int main(int argc, char *argv[])
 {
-  Startup();
-  Loop();
+
+  // Bootstrap. Including spawing threads
+  Startup(); 
+
+  // On the main thread, update the visualizer
+  while (Running == 1) {
+    if (viewer) {
+      std::lock_guard<std::mutex> g(filter_cloud_mutex);
+      viewer->updatePointCloud(filter_cloud, kCLOUD_ID);
+      viewer->spinOnce(12);
+    }
+  }
+
+  // We got a kill signal of some sort, so clean everything up.
   Shutdown();  
   return 0;
 }

@@ -12,9 +12,14 @@ static int kFRAME_WIDTH   = 512;
 static int kFRAME_HEIGHT  = 424;
    
 
+//////////////////////////////////////////////////////////////////////////////
+/** 
+ * Primary update loop
+ */
+
 void DriverKinect::Update() {
 
-  /**/  
+  // For each connected device, sync and register the frames
   std::map<std::string, DeviceBundle*>::iterator iter;
   for (iter = m_Devices.begin(); iter != m_Devices.end(); ++iter) {
 
@@ -34,23 +39,19 @@ void DriverKinect::Update() {
     int h = depth->height;
     int w = depth->width;
 
-    float min_x = std::numeric_limits<float>::max();
-    float min_y = std::numeric_limits<float>::max();
-    float min_z = std::numeric_limits<float>::max();
-
-    float max_x = std::numeric_limits<float>::min();
-    float max_y = std::numeric_limits<float>::min();
-    float max_z = std::numeric_limits<float>::min();
+    // set up extents
+    float max = std::numeric_limits<float>::max(); 
+    float min = std::numeric_limits<float>::min();
+    float min_x = max; float min_y = max; float min_z = max;
+    float max_x = min; float max_y = min; float max_z = min;
     
-
+    // grab each point from the registered frame, update the extents and push to the cloud
     for (size_t r = 0; r < h; r++) {
       for (size_t c = 0; c < w; c++) {
-        float x;
-        float y;
-        float z;
-        float frgb;
+        float x, y, z, frgb;
         dvc->registration->getPointXYZRGB(&undistorted, &registered, r, c, x, y, z, frgb);
         
+        // check for extents
         if (x > max_x) max_x = x;
         if (x < min_x) min_x = x;
         if (y > max_y) max_y = y;
@@ -58,6 +59,7 @@ void DriverKinect::Update() {
         if (z > max_z) max_z = z;
         if (z < min_z) min_z = z;
 
+        // transfer the data to the point cloud if we have one
         if (m_Cloud != NULL) {
           int pt = (r * h) + c;
           m_Cloud->points[pt].x =  x;
@@ -67,27 +69,23 @@ void DriverKinect::Update() {
         }
       }
     }
-    
-    /**
-    std::cout << "Extents: ";
-    std::cout << "\tx:" << min_x << "|" << max_x << "[" << (max_x - min_x) << "]";
-    std::cout << "\ty:" << min_y << "|" << max_y << "[" << (max_y - min_y) << "]";
-    std::cout << "\tz:" << min_z << "|" << max_z << "[" << (max_z - min_z) << "]";
-    std::cout << std::endl;
-    **/
-
     dvc->listener->release(frames);
 
   }
   /**/
 }
 
+
+//////////////////////////////////////////////////////////////////////////////
 DriverKinect::DriverKinect()
   :m_Cloud(NULL) {
 }
 
+
+//////////////////////////////////////////////////////////////////////////////
 DriverKinect::~DriverKinect() {
 
+  // clean up all of our resources
   std::map<std::string, DeviceBundle*>::iterator iter;
   for (iter = m_Devices.begin(); iter != m_Devices.end(); ++iter) {
     
@@ -103,6 +101,11 @@ DriverKinect::~DriverKinect() {
 }
 
 
+//////////////////////////////////////////////////////////////////////////////
+/** 
+ * Connect to attached devices and set up the appropriate point cloud to be 
+ * updated every time the update is called
+ */
 ColorPointCloudPtr DriverKinect::Initialize() {
 
   //libfreenect2::setGlobalLogger(libfreenect2::createConsoleLogger(libfreenect2::Logger::Debug));
