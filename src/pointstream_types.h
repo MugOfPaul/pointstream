@@ -9,3 +9,10 @@ typedef NormalCloud::Ptr NormalCloudPtr;
 typedef pcl::PointXYZRGB ColorPoint;
 typedef pcl::PointCloud<ColorPoint> ColorPointCloud;
 typedef ColorPointCloud::Ptr ColorPointCloudPtr;
+
+enum PointStreamMsgType { 
+  kMSG_POINTCLOUDINFO,
+  kMSG_POINTCLOUDPOINT
+};
+
+

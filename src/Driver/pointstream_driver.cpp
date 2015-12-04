@@ -13,9 +13,10 @@
 #include <pcl/filters/passthrough.h>
 #include <pcl/filters/approximate_voxel_grid.h>
 #include <pcl/filters/statistical_outlier_removal.h>
-#include <asio.hpp>
+
 
 #include "pointstream_types.h"
+#include "pointstream_drivernet.h"
 #include "driver_kinect.h"
 
 /** Notebook
@@ -40,10 +41,11 @@
   * Module vars/globals
   */
 sig_atomic_t Running = 1;
-std::thread threads[2];
+std::vector<std::thread> threads;
 std::mutex filter_cloud_mutex;
 
 // Networking
+PointStreamServer* server = NULL;
 
 // Point Cloud Source
 DriverInterface* interface = NULL;        // Our interface to whatever sensing device providing the point cloud
@@ -126,6 +128,28 @@ void DriverInterfaceLoop() {
 }
 
 
+
+//////////////////////////////////////////////////////////////////////////////
+/**
+ * Set up the Network
+ */
+ void NetworkLoop() {
+  //io_service.run();
+
+  while (Running == 1) {
+    if (server) {
+      server->Update();
+    }
+  }
+}
+
+void InitNetwork() {
+  server = new PointStreamServer(6969);
+  server->StartListening();
+  threads.push_back(std::thread(NetworkLoop));
+}
+
+
 //////////////////////////////////////////////////////////////////////////////
 /**
  * Bootstrapping the processes and memory
@@ -133,15 +157,18 @@ void DriverInterfaceLoop() {
 void Startup() {
   signal(SIGINT, sigint_handler);
 
-  interface = new DriverKinect;
-  raw_cloud = interface->Initialize();
+  //interface = new DriverKinect;
+  if (interface) {
+    raw_cloud = interface->Initialize();
+    filter_cloud = ColorPointCloudPtr(new ColorPointCloud);
+    cloud_normals = NormalCloudPtr(new NormalCloud);
 
-  filter_cloud = ColorPointCloudPtr(new ColorPointCloud);
-  cloud_normals = NormalCloudPtr(new NormalCloud);
+    InitVisualizer();
+    threads.push_back(std::thread(DriverInterfaceLoop));
+  }
 
-  InitVisualizer();
+  InitNetwork();
 
-  threads[0] = std::thread(DriverInterfaceLoop);
 }
 
 
@@ -152,18 +179,23 @@ void Startup() {
 void Shutdown() {
   std::cout << "Driver Shutdown." << std::endl;
 
-  // Let the other threads sync up
-  threads[0].join();
+  // wait for the threads to exit
+  //std::for_each(threads.begin(), threads.end(), [](std::thread& t){ t.join(); });
 
+  // clean up allocations and resources
+  if (server) 
+      delete server;
+
+  if (interface) {
   // shut the visualizer down if we have one
   if (viewer) {
     viewer->close();
     delete viewer;
   }
 
-  // final clean up of the device interface
-  if (interface)
+    // final clean up of the device interface
     delete interface;
+  }
 }
 
 
@@ -181,6 +213,8 @@ int main(int argc, char *argv[])
       std::lock_guard<std::mutex> g(filter_cloud_mutex);
       viewer->updatePointCloud(filter_cloud, kCLOUD_ID);
       viewer->spinOnce(12);
+    } else {
+      sleep(12);
     }
   }
 

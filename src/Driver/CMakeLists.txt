@@ -26,11 +26,11 @@ set(_target_libs
 )
 
 set(_target_srcs 
+  ../pointstream_types.cpp
   pointstream_driver.cpp
   driver_kinect.cpp
+  pointstream_drivernet.cpp
 )
-
-message(STATUS "incs: ${_target_includes}")
 
 add_executable(${_target} ${_target_srcs})
 target_include_directories(${_target} PRIVATE ${_target_includes})
