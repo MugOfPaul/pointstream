@@ -1,4 +1,4 @@
-set(_target PointStreamDriver)
+set(_target PointStreamServer)
 
 
 find_package(PkgConfig)    # try find PKGConfig as it will be used if found
@@ -27,9 +27,9 @@ set(_target_libs
 
 set(_target_srcs 
   ../pointstream_types.cpp
-  pointstream_driver.cpp
+  pointstream_server.cpp
   driver_kinect.cpp
-  pointstream_drivernet.cpp
+  pointstream_servernet.cpp
 )
 
 add_executable(${_target} ${_target_srcs})

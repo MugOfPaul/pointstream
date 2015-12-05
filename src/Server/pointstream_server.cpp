@@ -16,7 +16,7 @@
 
 
 #include "pointstream_types.h"
-#include "pointstream_drivernet.h"
+#include "pointstream_servernet.h"
 #include "driver_kinect.h"
 
 /** Notebook
@@ -26,13 +26,14 @@
  *
  * Total Frame: 
  *      Raw: 111149056 bits   (111150kbits) (111mbits)
- *            13893632 bytes  (13568KB) (13.25MB)
+ *            13893632 bytes      (13568KB)  (13.25MB)
  *
- *      Naive Filtered: 76800000 bits (76800kbits) (76.8mbits)
- *            9600000 bytes  (9375KB) (9.15MB)
+ *      Naive Filtered: 76800000 bits   (76800kbits)  (76.8mbits)
+ *                       9600000 bytes      (9375KB)     (9.15MB)
  *
  * Typical internet data rate of 10mbps (up & down)
- *      Filtered: 1fps Raw: <1fps
+ *      Filtered: 1fps 
+ *      Raw: <1fps
  */
 
 
@@ -40,21 +41,21 @@
  /**
   * Module vars/globals
   */
-sig_atomic_t Running = 1;
+std::atomic<int> Running(1);
 std::vector<std::thread> threads;
-std::mutex filter_cloud_mutex;
 
 // Networking
-PointStreamServer* server = NULL;
+std::unique_ptr<PointStreamServer> server = NULL; // Primary interface for handling incoming connections 
 
-// Point Cloud Source
-DriverInterface* interface = NULL;        // Our interface to whatever sensing device providing the point cloud
+// Point Cloud Source device
+std::unique_ptr<DriverInterface> interface = NULL; // Our interface to whatever sensing device providing the point cloud
 ColorPointCloudPtr raw_cloud = NULL;      // Raw cloud from the interface
 ColorPointCloudPtr filter_cloud = NULL;   // Filtered cloud to be sent out
 NormalCloudPtr cloud_normals = NULL;      // estimated normals
+std::mutex filter_cloud_mutex;            // locking guard for reading/writing the latest point cloud
     
 // Visualizer 
-pcl::visualization::PCLVisualizer* viewer = NULL;
+std::unique_ptr<pcl::visualization::PCLVisualizer> viewer = NULL;
 const char* kCLOUD_ID = "PointStream";
 
 //////////////////////////////////////////////////////////////////////////////
@@ -77,14 +78,9 @@ inline float pack_color(uint8_t r, uint8_t g, uint8_t b) {
  * Set up the Visualizer
  */
 void InitVisualizer() {
-  viewer = new pcl::visualization::PCLVisualizer("PointStream Driver Visualizer");
-  //viewer->addCoordinateSystem (1.0);
-  //viewer->setCameraPosition(0.0, 0.0, -0.1, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0);
+  viewer = std::unique_ptr<pcl::visualization::PCLVisualizer>(new pcl::visualization::PCLVisualizer("PointStream Driver Visualizer"));
   viewer->addPointCloud(filter_cloud, kCLOUD_ID);
   viewer->setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 2, kCLOUD_ID);
-
-  //viewer->addPointCloudNormals<ColorPoint, Normal>(filter_cloud, cloud_normals, 100, 0.01, "normals");
-  //viewer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_COLOR, 0.0, 0.0, 1.0, kCLOUD_ID); 
   viewer->initCameraParameters();
   viewer->setShowFPS(true);  
 }
@@ -96,6 +92,7 @@ void InitVisualizer() {
  */
 void DriverInterfaceLoop() {
 
+  // Master filters
   pcl::PassThrough<ColorPoint> pass;
   pass.setInputCloud(raw_cloud);
   pass.setFilterFieldName("z"); 
@@ -116,7 +113,7 @@ void DriverInterfaceLoop() {
     if (interface) {
         interface->Update();   
         
-        std::lock_guard<std::mutex> g(filter_cloud_mutex);
+        std::lock_guard<std::mutex> lock(filter_cloud_mutex);
 
         pass.filter(*filter_cloud); 
         voxel.filter (*filter_cloud);
@@ -134,8 +131,6 @@ void DriverInterfaceLoop() {
  * Set up the Network
  */
  void NetworkLoop() {
-  //io_service.run();
-
   while (Running == 1) {
     if (server) {
       server->Update();
@@ -144,9 +139,24 @@ void DriverInterfaceLoop() {
 }
 
 void InitNetwork() {
-  server = new PointStreamServer(6969);
+  server = std::unique_ptr<PointStreamServer>(new PointStreamServer(6969));
   server->StartListening();
   threads.push_back(std::thread(NetworkLoop));
+}
+
+//////////////////////////////////////////////////////////////////////////////
+void InitInterface() {
+  
+  interface = std::unique_ptr<DriverKinect>(new DriverKinect());
+
+  if (interface) {
+    raw_cloud = interface->Initialize();
+    filter_cloud = ColorPointCloudPtr(new ColorPointCloud);
+    cloud_normals = NormalCloudPtr(new NormalCloud);
+
+    InitVisualizer();
+    threads.push_back(std::thread(DriverInterfaceLoop));
+  }
 }
 
 
@@ -156,19 +166,8 @@ void InitNetwork() {
  */
 void Startup() {
   signal(SIGINT, sigint_handler);
-
-  //interface = new DriverKinect;
-  if (interface) {
-    raw_cloud = interface->Initialize();
-    filter_cloud = ColorPointCloudPtr(new ColorPointCloud);
-    cloud_normals = NormalCloudPtr(new NormalCloud);
-
-    InitVisualizer();
-    threads.push_back(std::thread(DriverInterfaceLoop));
-  }
-
+  //InitInterface();
   InitNetwork();
-
 }
 
 
@@ -179,23 +178,19 @@ void Startup() {
 void Shutdown() {
   std::cout << "Driver Shutdown." << std::endl;
 
-  // wait for the threads to exit
-  //std::for_each(threads.begin(), threads.end(), [](std::thread& t){ t.join(); });
-
-  // clean up allocations and resources
-  if (server) 
-      delete server;
+  if (server) {
+    server->Stop();
+  }
 
   if (interface) {
-  // shut the visualizer down if we have one
-  if (viewer) {
-    viewer->close();
-    delete viewer;
+    // shut the visualizer down if we have one
+    if (viewer) {
+      viewer->close();
+    }
   }
 
-    // final clean up of the device interface
-    delete interface;
-  }
+  for (auto& th : threads) { th.join(); }
+  threads.clear();
 }
 
 
@@ -210,11 +205,11 @@ int main(int argc, char *argv[])
   // On the main thread, update the visualizer
   while (Running == 1) {
     if (viewer) {
-      std::lock_guard<std::mutex> g(filter_cloud_mutex);
+      std::lock_guard<std::mutex> lock(filter_cloud_mutex);
       viewer->updatePointCloud(filter_cloud, kCLOUD_ID);
       viewer->spinOnce(12);
     } else {
-      sleep(12);
+      sleep(1);
     }
   }
 

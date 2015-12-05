@@ -1,2 +1,2 @@
-add_subdirectory(Driver)
+add_subdirectory(Server)
 add_subdirectory(Consumer)

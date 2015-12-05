@@ -1,5 +1,5 @@
 
-#include "pointstream_drivernet.h"
+#include "pointstream_servernet.h"
 
 #include <iostream>
 #include <memory>
@@ -17,7 +17,7 @@ PointStreamConnection::PointStreamConnection(PointStreamServer* server, asio::ip
   
 //////////////////////////////////////////////////////////////////////////////
 PointStreamConnection::~PointStreamConnection() {
-  socket.close();
+  //socket.close();
 }
 
 //////////////////////////////////////////////////////////////////////////////
@@ -81,9 +81,8 @@ PointStreamServer::PointStreamServer(short port_)
 
 //////////////////////////////////////////////////////////////////////////////
 PointStreamServer::~PointStreamServer() {
-
-  connections.clear();
-  acceptor.get_io_service().stop();
+  //connections.clear();
+  Stop();
 }
 
 //////////////////////////////////////////////////////////////////////////////
@@ -96,10 +95,18 @@ void PointStreamServer::StartListening() {
   RunAccept();
 }
 
+
+//////////////////////////////////////////////////////////////////////////////
+void PointStreamServer::Stop() {
+   socket.close();
+   acceptor.get_io_service().stop();
+   connections.clear();
+}
+
 //////////////////////////////////////////////////////////////////////////////
 void PointStreamServer::RemoveConnection(PointStreamConnection* conn) {
   connections.erase(std::find_if(connections.begin(), connections.end(),
-    [&] (std::unique_ptr<PointStreamConnection>& p) {
+    [&] (std::shared_ptr<PointStreamConnection>& p) {
       return p.get() == conn;
     }
     ));
@@ -115,8 +122,8 @@ void PointStreamServer::RunAccept() {
       {
         std::cout << "New connection. " << socket.remote_endpoint() << std::endl;
 
-        PointStreamConnection* conn = new PointStreamConnection(this, std::move(socket));
-        connections.push_back(std::unique_ptr<PointStreamConnection>(conn));
+        auto conn = std::make_shared<PointStreamConnection>(this, std::move(socket));
+        connections.push_back(conn);
         conn->Start();
       } else {
         std::cout << "Connection Error. " << ec << std::endl;

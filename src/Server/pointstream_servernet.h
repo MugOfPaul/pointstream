@@ -13,6 +13,7 @@ public:
   PointStreamServer(short port);
   virtual ~PointStreamServer();
   void StartListening();
+  void Stop();
   void Update();
   void RemoveConnection(PointStreamConnection* conn);
 private:
@@ -23,7 +24,7 @@ private:
   asio::ip::tcp::acceptor   acceptor;
   asio::ip::tcp::socket     socket; 
 
-  std::vector<std::unique_ptr<PointStreamConnection>> connections;
+  std::vector<std::shared_ptr<PointStreamConnection>> connections;
 };
 
 
