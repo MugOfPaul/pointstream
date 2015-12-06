@@ -4,6 +4,8 @@ set(_target PointStreamServer)
 find_package(PkgConfig)    # try find PKGConfig as it will be used if found
 find_package(freenect2 CONFIG REQUIRED)
 find_package(PCL 1.7.2 REQUIRED)
+find_package(gflags REQUIRED)
+find_library(GFLAGS_LIBRARY gflags)
 
 add_definitions(${PCL_DEFINITIONS})
 
@@ -16,6 +18,7 @@ set(_target_includes
 )
 
 set(_target_libs 
+  ${GFLAGS_LIBRARY}
   ${freenect2_LIBRARIES}
   ${PCL_COMMON_LIBRARIES}
   ${PCL_GEOMETRY_LIBRARIES}
@@ -26,9 +29,10 @@ set(_target_libs
 )
 
 set(_target_srcs 
-  ../pointstream_types.cpp
+  ../pointstream_common.cpp
   pointstream_server.cpp
-  driver_kinect.cpp
+  pointstream_processor.cpp
+  device_kinect.cpp
   pointstream_servernet.cpp
 )
 

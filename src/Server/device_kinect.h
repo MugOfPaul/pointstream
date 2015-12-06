@@ -1,6 +1,6 @@
 #pragma once
 
-#include "driver_interface.h"
+#include "device_interface.h"
 
 #include <string>
 #include <map>
@@ -10,6 +10,9 @@
 #include <libfreenect2/registration.h>
 
 
+/**
+ * This represents a connection to a single device
+ */
 struct DeviceBundle {
   libfreenect2::Freenect2Device* device;
   libfreenect2::PacketPipeline* pipeline;
@@ -17,16 +20,14 @@ struct DeviceBundle {
   libfreenect2::Registration* registration;
 };
 
-class DriverKinect : public DriverInterface {
+class DeviceKinect : public DeviceInterface {
   public:
-    DriverKinect();
-    virtual ~DriverKinect();
-    ColorPointCloudPtr Initialize();
+    DeviceKinect(std::shared_ptr<PointStreamProcessor> proc);
+    virtual ~DeviceKinect();
+    void Initialize();
     void Update();
-    ColorPointCloudPtr PointCloud() { return m_Cloud; }
 
   private:
     libfreenect2::Freenect2 m_Freenect;
     std::map<std::string,DeviceBundle*> m_Devices;
-    ColorPointCloudPtr m_Cloud;
 };

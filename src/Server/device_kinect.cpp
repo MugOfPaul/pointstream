@@ -1,4 +1,4 @@
-#include "driver_kinect.h"
+#include "device_kinect.h"
 
 
 #include <libfreenect2/frame_listener_impl.h>
@@ -8,8 +8,8 @@
 #include <iostream>
 
 
-static int kFRAME_WIDTH   = 512;
-static int kFRAME_HEIGHT  = 424;
+static short kFRAME_WIDTH   = 512;
+static short kFRAME_HEIGHT  = 424;
    
 
 //////////////////////////////////////////////////////////////////////////////
@@ -17,7 +17,9 @@ static int kFRAME_HEIGHT  = 424;
  * Primary update loop
  */
 
-void DriverKinect::Update() {
+void DeviceKinect::Update() {
+
+  m_Processor->BeginFrame();
 
   // For each connected device, sync and register the frames
   std::map<std::string, DeviceBundle*>::iterator iter;
@@ -59,31 +61,27 @@ void DriverKinect::Update() {
         if (z > max_z) max_z = z;
         if (z < min_z) min_z = z;
 
-        // transfer the data to the point cloud if we have one
-        if (m_Cloud != NULL) {
-          int pt = (r * h) + c;
-          m_Cloud->points[pt].x =  x;
-          m_Cloud->points[pt].y = -y;
-          m_Cloud->points[pt].z =  z;
-          m_Cloud->points[pt].rgb = frgb;
-        }
+        int pt = (r * h) + c;
+        m_Processor->SubmitPoint(pt, x, -y, z, frgb);
       }
     }
     dvc->listener->release(frames);
-
   }
+
+  m_Processor->EndFrame();
   /**/
 }
 
 
 //////////////////////////////////////////////////////////////////////////////
-DriverKinect::DriverKinect()
-  :m_Cloud(NULL) {
+DeviceKinect::DeviceKinect(std::shared_ptr<PointStreamProcessor> proc)
+  :DeviceInterface(proc)
+{
 }
 
 
 //////////////////////////////////////////////////////////////////////////////
-DriverKinect::~DriverKinect() {
+DeviceKinect::~DeviceKinect() {
 
   // clean up all of our resources
   std::map<std::string, DeviceBundle*>::iterator iter;
@@ -106,7 +104,7 @@ DriverKinect::~DriverKinect() {
  * Connect to attached devices and set up the appropriate point cloud to be 
  * updated every time the update is called
  */
-ColorPointCloudPtr DriverKinect::Initialize() {
+void DeviceKinect::Initialize() {
 
   //libfreenect2::setGlobalLogger(libfreenect2::createConsoleLogger(libfreenect2::Logger::Debug));
 
@@ -114,6 +112,7 @@ ColorPointCloudPtr DriverKinect::Initialize() {
   if (numDevices == 0)
   {
     std::cout << "no device connected!" << std::endl;
+    return;
   } 
 
   // build our device map and initialize the m_Devices
@@ -135,7 +134,5 @@ ColorPointCloudPtr DriverKinect::Initialize() {
 
   }/**/
 
-  m_Cloud = ColorPointCloudPtr(new ColorPointCloud(kFRAME_WIDTH, kFRAME_HEIGHT));
-  m_Cloud->is_dense = false;
-  return m_Cloud;
+  m_Processor->Initialize(kFRAME_WIDTH, kFRAME_HEIGHT);
 }

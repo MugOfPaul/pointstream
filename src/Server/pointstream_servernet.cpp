@@ -120,7 +120,7 @@ void PointStreamServer::RunAccept() {
     [this](std::error_code ec) {
       if (!ec)
       {
-        std::cout << "New connection. " << socket.remote_endpoint() << std::endl;
+        std::cout << "New connection. From " << socket.remote_endpoint() << " to " << socket.local_endpoint() << std::endl;
 
         auto conn = std::make_shared<PointStreamConnection>(this, std::move(socket));
         connections.push_back(conn);

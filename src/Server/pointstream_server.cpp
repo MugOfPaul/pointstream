@@ -3,6 +3,7 @@
 #include <signal.h>
 #include <thread>    
 #include <mutex>    
+#include <gflags/gflags.h>
 
 #include <pcl/common/common_headers.h>
 #include <pcl/point_types.h>
@@ -15,9 +16,14 @@
 #include <pcl/filters/statistical_outlier_removal.h>
 
 
-#include "pointstream_types.h"
+#include "pointstream_common.h"
+#include "pointstream_processor.h"
 #include "pointstream_servernet.h"
-#include "driver_kinect.h"
+#include "device_kinect.h"
+
+DEFINE_bool(net, true, "should run network server");
+DEFINE_int32(port, 6969, "port to listen on");
+DEFINE_bool(viewer, false, "run the visualizer");
 
 /** Notebook
  *
@@ -45,17 +51,16 @@ std::atomic<int> Running(1);
 std::vector<std::thread> threads;
 
 // Networking
-std::unique_ptr<PointStreamServer> server = NULL; // Primary interface for handling incoming connections 
+std::unique_ptr<PointStreamServer> server = nullptr; // Primary interface for handling incoming connections 
+
+// Our actual processor
+std::shared_ptr<PointStreamProcessor> processor = nullptr;
 
 // Point Cloud Source device
-std::unique_ptr<DriverInterface> interface = NULL; // Our interface to whatever sensing device providing the point cloud
-ColorPointCloudPtr raw_cloud = NULL;      // Raw cloud from the interface
-ColorPointCloudPtr filter_cloud = NULL;   // Filtered cloud to be sent out
-NormalCloudPtr cloud_normals = NULL;      // estimated normals
-std::mutex filter_cloud_mutex;            // locking guard for reading/writing the latest point cloud
-    
+std::unique_ptr<DeviceInterface> interface = nullptr; // Our interface to whatever sensing device providing the point cloud
+
 // Visualizer 
-std::unique_ptr<pcl::visualization::PCLVisualizer> viewer = NULL;
+std::unique_ptr<pcl::visualization::PCLVisualizer> viewer = nullptr;
 const char* kCLOUD_ID = "PointStream";
 
 //////////////////////////////////////////////////////////////////////////////
@@ -65,21 +70,14 @@ const char* kCLOUD_ID = "PointStream";
 void sigint_handler(int s) { Running = 0; }
 
 
-//////////////////////////////////////////////////////////////////////////////
-// Helper function to pack a 32-bit color
-inline float pack_color(uint8_t r, uint8_t g, uint8_t b) {
-  int32_t rgb = ((uint32_t)r << 16 | (uint32_t)g << 8 | (uint32_t)b);
-  return *reinterpret_cast<float*>(&rgb);
-}
-
 
 //////////////////////////////////////////////////////////////////////////////
 /**
  * Set up the Visualizer
  */
 void InitVisualizer() {
-  viewer = std::unique_ptr<pcl::visualization::PCLVisualizer>(new pcl::visualization::PCLVisualizer("PointStream Driver Visualizer"));
-  viewer->addPointCloud(filter_cloud, kCLOUD_ID);
+  viewer = std::unique_ptr<pcl::visualization::PCLVisualizer>(new pcl::visualization::PCLVisualizer("PointStream Server Visualizer"));
+  viewer->addPointCloud(processor->GetLatestCloudFiltered(), kCLOUD_ID);
   viewer->setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 2, kCLOUD_ID);
   viewer->initCameraParameters();
   viewer->setShowFPS(true);  
@@ -88,38 +86,12 @@ void InitVisualizer() {
 
 //////////////////////////////////////////////////////////////////////////////
 /** 
- * Our main loop for getting a raw point cloud and filtering it
+ * Our main loop for getting a raw point cloud from a device and processing it
  */
-void DriverInterfaceLoop() {
-
-  // Master filters
-  pcl::PassThrough<ColorPoint> pass;
-  pass.setInputCloud(raw_cloud);
-  pass.setFilterFieldName("z"); 
-  pass.setFilterLimits(0.1, 5);
-  pass.setKeepOrganized(true); 
-
-  pcl::ApproximateVoxelGrid<ColorPoint> voxel;
-  voxel.setInputCloud (filter_cloud);
-  voxel.setLeafSize (0.01f, 0.01f, 0.01f); // 1cm
-              
-  pcl::search::KdTree<ColorPoint>::Ptr tree (new pcl::search::KdTree<ColorPoint>());
-  pcl::NormalEstimation<ColorPoint, pcl::Normal> ne;
-  ne.setInputCloud(filter_cloud);
-  ne.setSearchMethod (tree);
-  ne.setRadiusSearch (0.03); // 3cm
-
+void DeviceInterfaceLoop() {
   while (Running == 1) {
     if (interface) {
         interface->Update();   
-        
-        std::lock_guard<std::mutex> lock(filter_cloud_mutex);
-
-        pass.filter(*filter_cloud); 
-        voxel.filter (*filter_cloud);
-
-        //std::cout << "Cloud Points: " << raw_cloud->size() << "\t Filtered: " << filter_cloud->size() << std::endl;
-        //ne.compute (*cloud_normals);
     }
   }
 }
@@ -128,7 +100,7 @@ void DriverInterfaceLoop() {
 
 //////////////////////////////////////////////////////////////////////////////
 /**
- * Set up the Network
+ * Update for listeners and transmit point cloud
  */
  void NetworkLoop() {
   while (Running == 1) {
@@ -139,7 +111,7 @@ void DriverInterfaceLoop() {
 }
 
 void InitNetwork() {
-  server = std::unique_ptr<PointStreamServer>(new PointStreamServer(6969));
+  server = std::unique_ptr<PointStreamServer>(new PointStreamServer(FLAGS_port));
   server->StartListening();
   threads.push_back(std::thread(NetworkLoop));
 }
@@ -147,15 +119,16 @@ void InitNetwork() {
 //////////////////////////////////////////////////////////////////////////////
 void InitInterface() {
   
-  interface = std::unique_ptr<DriverKinect>(new DriverKinect());
+  processor = std::make_shared<PointStreamProcessor>();
+  interface = std::unique_ptr<DeviceKinect>(new DeviceKinect(processor));
 
   if (interface) {
-    raw_cloud = interface->Initialize();
-    filter_cloud = ColorPointCloudPtr(new ColorPointCloud);
-    cloud_normals = NormalCloudPtr(new NormalCloud);
+    interface->Initialize();
 
-    InitVisualizer();
-    threads.push_back(std::thread(DriverInterfaceLoop));
+    if (FLAGS_viewer)
+       InitVisualizer();
+      
+      threads.push_back(std::thread(DeviceInterfaceLoop));
   }
 }
 
@@ -166,8 +139,11 @@ void InitInterface() {
  */
 void Startup() {
   signal(SIGINT, sigint_handler);
-  //InitInterface();
-  InitNetwork();
+  
+  InitInterface();
+  
+  if (FLAGS_net)
+    InitNetwork();
 }
 
 
@@ -176,7 +152,7 @@ void Startup() {
  * Releasing resources and memory
  */
 void Shutdown() {
-  std::cout << "Driver Shutdown." << std::endl;
+  std::cout << "Full Shutdown." << std::endl;
 
   if (server) {
     server->Stop();
@@ -198,22 +174,27 @@ void Shutdown() {
 //////////////////////////////////////////////////////////////////////////////
 int main(int argc, char *argv[])
 {
+  try
+  {
+    gflags::ParseCommandLineFlags(&argc, &argv, true);
 
-  // Bootstrap. Including spawing threads
-  Startup(); 
+    // Bootstrap. Including spawing threads
+    Startup(); 
 
-  // On the main thread, update the visualizer
-  while (Running == 1) {
-    if (viewer) {
-      std::lock_guard<std::mutex> lock(filter_cloud_mutex);
-      viewer->updatePointCloud(filter_cloud, kCLOUD_ID);
-      viewer->spinOnce(12);
-    } else {
-      sleep(1);
+    // On the main thread, update the visualizer
+    while (Running == 1) {
+      if (viewer) {
+        viewer->updatePointCloud(processor->GetLatestCloudFiltered(), kCLOUD_ID);
+        viewer->spinOnce(12);
+      } else {
+        std::this_thread::sleep_for(std::chrono::milliseconds(16));
+      }
     }
+
+  } catch (std::exception& e) {
+    std::cerr << "Exception: " << e.what() << "\n";
   }
 
-  // We got a kill signal of some sort, so clean everything up.
   Shutdown();  
   return 0;
 }
