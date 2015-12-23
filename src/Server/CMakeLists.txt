@@ -30,10 +30,10 @@ set(_target_libs
 
 set(_target_srcs 
   ../pointstream_common.cpp
-  pointstream_server.cpp
+  server.cpp
   pointstream_processor.cpp
   device_kinect.cpp
-  pointstream_servernet.cpp
+  pointstream_server.cpp
 )
 
 add_executable(${_target} ${_target_srcs})

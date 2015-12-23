@@ -27,6 +27,7 @@ set(_target_libs
 
 set(_target_srcs 
   ../pointstream_common.cpp
+  consumer.cpp
   pointstream_consumer.cpp
 )
 
