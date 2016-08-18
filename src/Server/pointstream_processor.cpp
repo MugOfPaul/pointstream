@@ -27,14 +27,30 @@ ColorPointCloudPtr PointStreamProcessor::GetLatestCloudFiltered() {
   return m_FilterCloud;
 }
 
+// PassThrough to set min/max depth
+// http://pointclouds.org/documentation/tutorials/passthrough.php
+static pcl::PassThrough<ColorPoint> filterPassThrough_;
+
+ // Voxel Grid to constrain data to known structure
+static pcl::ApproximateVoxelGrid<ColorPoint> filterVoxel_;
+
+
 void PointStreamProcessor::Initialize(short w, short h) {
   m_FilterCloud = ColorPointCloudPtr(new ColorPointCloud);
   m_RawCloud = ColorPointCloudPtr(new ColorPointCloud(w, h));
   m_RawCloud->is_dense = false;
+
+  filterPassThrough_.setInputCloud(m_RawCloud); // first filter so it takes the raw cloud
+  filterPassThrough_.setFilterFieldName("z"); 
+  filterPassThrough_.setFilterLimits(0.001, 10);
+  filterPassThrough_.setKeepOrganized(true); // this keeps the outliers and sets them to NaN
+
+  filterVoxel_.setInputCloud(m_FilterCloud);
+  filterVoxel_.setLeafSize(0.01f, 0.01f, 0.01f); // Value is meters
 }
 
 void PointStreamProcessor::BeginFrame() {
-
+  filter_cloud_mutex.lock();
 }
 
 void PointStreamProcessor::SubmitPoint(int index, float x, float y, float z, float rgb) {
@@ -45,30 +61,14 @@ void PointStreamProcessor::SubmitPoint(int index, float x, float y, float z, flo
 }
 
 void PointStreamProcessor::EndFrame() {
-
-  std::lock_guard<std::mutex> lock(filter_cloud_mutex);
+  //std::lock_guard<std::mutex> lock(filter_cloud_mutex);
   RunFilters();
+  filter_cloud_mutex.unlock();
 }
 
 void PointStreamProcessor::RunFilters() {
-  // Master filters
-  pcl::PassThrough<ColorPoint> pass;
-  pass.setInputCloud(m_RawCloud);
-  pass.setFilterFieldName("z"); 
-  pass.setFilterLimits(0.1, 5);
-  pass.setKeepOrganized(true); 
 
-  pcl::ApproximateVoxelGrid<ColorPoint> voxel;
-  voxel.setInputCloud(m_FilterCloud);
-  voxel.setLeafSize(0.01f, 0.01f, 0.01f); // 1cm
-              
-  pcl::search::KdTree<ColorPoint>::Ptr tree (new pcl::search::KdTree<ColorPoint>());
-  pcl::NormalEstimation<ColorPoint, pcl::Normal> ne;
-  ne.setInputCloud(m_FilterCloud);
-  ne.setSearchMethod(tree);
-  ne.setRadiusSearch(0.03); // 3cm
-
-  pass.filter(*m_FilterCloud);   // uses raw cloud to start
-  voxel.filter (*m_FilterCloud); 
+  filterPassThrough_.filter(*m_FilterCloud);   
+  filterVoxel_.filter (*m_FilterCloud); 
 }
 

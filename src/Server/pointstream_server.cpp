@@ -1,5 +1,6 @@
 
 #include "pointstream_server.h"
+#include "pointstream_common.h"
 
 #include <iostream>
 #include <memory>
@@ -22,18 +23,19 @@ PointStreamConnection::~PointStreamConnection() {
 
 //////////////////////////////////////////////////////////////////////////////
 void PointStreamConnection::Start() {
-  Read();
+  //Read();
 }
 
 //////////////////////////////////////////////////////////////////////////////
 void PointStreamConnection::Read() {
+  /**
   socket.async_read_some(asio::buffer(data_, max_length),
       [this](std::error_code ec, std::size_t length)
         {
           if (!ec)
           {
             std::cout << "Read " << length << " bytes" << std::endl;
-            Write(length);
+            //Write(length);
           } else {
             if (ec.value() == 2) {
               std::cout << "Client Disconnected." << std::endl;
@@ -44,18 +46,19 @@ void PointStreamConnection::Read() {
           }
 
         });
+        **/
 }
 
 
 //////////////////////////////////////////////////////////////////////////////
-void PointStreamConnection::Write(std::size_t length) {
-  asio::async_write(socket, asio::buffer(data_, length),
+void PointStreamConnection::AsyncWrite(PointStreamPointBuffer& buffer) {
+  asio::async_write(socket, asio::buffer(buffer),
       [this](std::error_code ec, std::size_t length)
       {
         if (!ec)
         {
           std::cout << "Wrote " << length << " bytes" << std::endl;
-          Read();
+          //Read();
         } else {
           if (ec.value() == 2) {
             std::cout << "Client Disconnected." << std::endl;
@@ -87,7 +90,20 @@ PointStreamServer::~PointStreamServer() {
 
 //////////////////////////////////////////////////////////////////////////////
 void PointStreamServer::Update() {
-  acceptor.get_io_service().run_one();
+  io_service.run_one();
+
+  static unsigned int foo = 0;
+
+  for (int i = 0; i < 10; i++) {
+    PointStreamPoint p;
+    p.index = foo++;
+    points_out.push_back(p);
+  }
+
+  for (auto& conn : connections) { conn->AsyncWrite(points_out); }
+
+  points_out.clear();
+
 }
 
 //////////////////////////////////////////////////////////////////////////////
@@ -99,7 +115,7 @@ void PointStreamServer::StartListening() {
 //////////////////////////////////////////////////////////////////////////////
 void PointStreamServer::Stop() {
    socket.close();
-   acceptor.get_io_service().stop();
+   io_service.stop();
    connections.clear();
 }
 
