@@ -10,8 +10,9 @@ using asio::ip::tcp;
 
 //////////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////////
-PointStreamConnection::PointStreamConnection(PointStreamServer* server, asio::ip::tcp::socket s)
-:server(server)
+PointStreamConnection::PointStreamConnection(int i, PointStreamServer* server, asio::ip::tcp::socket s)
+:id(i)
+,server(server)
 ,socket(std::move(s))
 {
 }
@@ -23,53 +24,84 @@ PointStreamConnection::~PointStreamConnection() {
 
 //////////////////////////////////////////////////////////////////////////////
 void PointStreamConnection::Start() {
-  //Read();
+  ReadNewPacket();
 }
 
 //////////////////////////////////////////////////////////////////////////////
-void PointStreamConnection::Read() {
-  /**
-  socket.async_read_some(asio::buffer(data_, max_length),
-      [this](std::error_code ec, std::size_t length)
-        {
-          if (!ec)
-          {
-            std::cout << "Read " << length << " bytes" << std::endl;
-            //Write(length);
-          } else {
-            if (ec.value() == 2) {
-              std::cout << "Client Disconnected." << std::endl;
-              server->RemoveConnection(this);
-            } else {
-              std::cout << "Error: " << ec.value() << std::endl;
-            }
-          }
+void PointStreamConnection::ProcessFullPacket() {
 
-        });
-        **/
+  // Client has sent us their version information
+  if (scratch_packet.Type() == PointStreamPacket::Version) {
+    double clientVersion = *((double*)scratch_packet.Payload());
+    std::cout << "Client " << id << " is version: " << clientVersion << std::endl;
+    // let them know our version
+    SendVersion();
+  }
 }
 
+//////////////////////////////////////////////////////////////////////////////
+void PointStreamConnection::SendVersion() {
+  PointStreamPacket response(PointStreamPacket::Version);
+  Write(response);
+}
 
 //////////////////////////////////////////////////////////////////////////////
-void PointStreamConnection::AsyncWrite(PointStreamPointBuffer& buffer) {
-  asio::async_write(socket, asio::buffer(buffer),
-      [this](std::error_code ec, std::size_t length)
+void PointStreamConnection::ReadPacketPayload() {
+  auto self(shared_from_this());
+  asio::async_read(socket,
+      asio::buffer(scratch_packet.Payload(), scratch_packet.PayloadSize()),
+      [this, self](std::error_code ec, std::size_t /*length*/)
       {
         if (!ec)
         {
-          std::cout << "Wrote " << length << " bytes" << std::endl;
-          //Read();
-        } else {
-          if (ec.value() == 2) {
-            std::cout << "Client Disconnected." << std::endl;
-            server->RemoveConnection(this);
-          } else {
-            std::cout << "Error: " << ec.value() << std::endl;
-          }
+          ProcessFullPacket();
+          ReadNewPacket();
+        }
+        else
+        {
+          std::cout << "Error Reading Payload from Client: " << ec.message() << " (" << ec.value() << ")" << std::endl;
         }
       });
 }
 
+//////////////////////////////////////////////////////////////////////////////
+void PointStreamConnection::ReadNewPacket() {
+
+  scratch_packet.Reset();
+  asio::async_read(socket,
+      asio::buffer(scratch_packet.Raw(), PointStreamPacket::kHeaderLengthBytes),
+      [this](std::error_code ec, std::size_t /*length*/)
+      {
+        if (!ec)
+        {
+          scratch_packet.Unpack();
+          ReadPacketPayload();
+        }
+        else
+        {
+          std::cout << "Error Reading Packet from Client: " << ec.message() << " (" << ec.value() << ")" << std::endl;
+          server->RemoveConnection(this);
+        }
+      });
+}
+
+
+//////////////////////////////////////////////////////////////////////////////
+void PointStreamConnection::Write(PointStreamPacket& packet) {
+  asio::async_write(socket,
+      asio::buffer(packet.Raw(), packet.Size()),
+      [this, packet](std::error_code ec, std::size_t /*length*/)
+      {
+        if (!ec)
+        {
+           //std::cout << "Sent Packet to Client: " << packet.Type() << " (" << packet.PayloadSize() << " payload bytes)" << std::endl;
+        }
+        else
+        {
+          std::cout << "Error Sending Packet to Client: " << ec.message() << " (" << ec.value() << ")" << std::endl;
+        }
+      });
+}
 
 //////////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////////
@@ -90,32 +122,19 @@ PointStreamServer::~PointStreamServer() {
 
 //////////////////////////////////////////////////////////////////////////////
 void PointStreamServer::Update() {
-  io_service.run_one();
-
-  static unsigned int foo = 0;
-
-  for (int i = 0; i < 10; i++) {
-    PointStreamPoint p;
-    p.index = foo++;
-    points_out.push_back(p);
-  }
-
-  for (auto& conn : connections) { conn->AsyncWrite(points_out); }
-
-  points_out.clear();
-
+  io_service.poll();
 }
 
 //////////////////////////////////////////////////////////////////////////////
-void PointStreamServer::StartListening() {
+void PointStreamServer::Start() {
   RunAccept();
 }
 
 
 //////////////////////////////////////////////////////////////////////////////
 void PointStreamServer::Stop() {
-   socket.close();
    io_service.stop();
+   socket.close();
    connections.clear();
 }
 
@@ -138,7 +157,7 @@ void PointStreamServer::RunAccept() {
       {
         std::cout << "New connection. From " << socket.remote_endpoint() << " to " << socket.local_endpoint() << std::endl;
 
-        auto conn = std::make_shared<PointStreamConnection>(this, std::move(socket));
+        auto conn = std::make_shared<PointStreamConnection>(connections.size(), this, std::move(socket));
         connections.push_back(conn);
         conn->Start();
       } else {

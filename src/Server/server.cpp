@@ -50,18 +50,18 @@ DEFINE_bool(viewer, false, "run the visualizer");
 std::atomic<int> Running(1);
 std::vector<std::thread> threads;
 
-// Networking
-std::unique_ptr<PointStreamServer> server = nullptr; // Primary interface for handling incoming connections 
+// Primary interface for handling client connections 
+std::unique_ptr<PointStreamServer> server = nullptr; 
 
-// Our actual processor
+ // Our interface to whatever sensing device providing the point cloud
+std::unique_ptr<DeviceInterface> interface = nullptr;
+
+// Data processor that takes raw data from source interface
 std::shared_ptr<PointStreamProcessor> processor = nullptr;
-
-// Point Cloud Source device
-std::unique_ptr<DeviceInterface> interface = nullptr; // Our interface to whatever sensing device providing the point cloud
 
 // Visualizer 
 std::unique_ptr<pcl::visualization::PCLVisualizer> viewer = nullptr;
-const char* kCLOUD_ID = "PointStream";
+const char* kCloudId = "PointStream";
 
 //////////////////////////////////////////////////////////////////////////////
 /**
@@ -77,8 +77,8 @@ void sigint_handler(int s) { Running = 0; }
  */
 void InitVisualizer() {
   viewer = std::unique_ptr<pcl::visualization::PCLVisualizer>(new pcl::visualization::PCLVisualizer("PointStream Server Visualizer"));
-  viewer->addPointCloud(processor->GetLatestCloudFiltered(), kCLOUD_ID);
-  viewer->setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 2, kCLOUD_ID);
+  viewer->addPointCloud(processor->GetLatestCloudFiltered(), kCloudId);
+  viewer->setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 2, kCloudId);
   viewer->initCameraParameters();
   viewer->setShowFPS(true);  
 }
@@ -94,6 +94,10 @@ void DeviceInterfaceLoop() {
         interface->Update();   
     }
   }
+
+  if (viewer) {
+    viewer->close();
+  }
 }
 
 
@@ -103,16 +107,19 @@ void DeviceInterfaceLoop() {
  * Update for listeners and transmit point cloud
  */
  void NetworkLoop() {
+  server = std::unique_ptr<PointStreamServer>(new PointStreamServer(FLAGS_port));
+
+  server->Start();
+  
   while (Running == 1) {
     if (server) {
       server->Update();
     }
   }
+  server->Stop();
 }
 
 void InitNetwork() {
-  server = std::unique_ptr<PointStreamServer>(new PointStreamServer(FLAGS_port));
-  server->StartListening();
   threads.push_back(std::thread(NetworkLoop));
 }
 
@@ -153,20 +160,13 @@ void Startup() {
  */
 void Shutdown() {
   std::cout << "Full Shutdown." << std::endl;
-
-  if (server) {
-    server->Stop();
-  }
-
-  if (interface) {
-    // shut the visualizer down if we have one
-    if (viewer) {
-      viewer->close();
-    }
-  }
-
   for (auto& th : threads) { th.join(); }
   threads.clear();
+
+  interface.release();
+  viewer.release();
+  server.release();
+
 }
 
 
@@ -184,7 +184,7 @@ int main(int argc, char *argv[])
     // On the main thread, update the visualizer
     while (Running == 1) {
       if (viewer) {
-        viewer->updatePointCloud(processor->GetLatestCloudFiltered(), kCLOUD_ID);
+        viewer->updatePointCloud(processor->GetLatestCloudFiltered(), kCloudId);
         viewer->spinOnce(12);
       } else {
         std::this_thread::sleep_for(std::chrono::milliseconds(16));

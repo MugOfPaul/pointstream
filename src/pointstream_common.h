@@ -3,6 +3,16 @@
 #include <pcl/common/common_headers.h>
 #include <asio.hpp>
 
+static double kCurrentVersion = 0.1;
+
+//////////////////////////////////////////////////////////////////////////////
+// Helper function to pack a 32-bit color
+inline float pack_color(uint8_t r, uint8_t g, uint8_t b) {
+  int32_t rgb = ((uint32_t)r << 16 | (uint32_t)g << 8 | (uint32_t)b);
+  return *reinterpret_cast<float*>(&rgb);
+}
+
+//////////////////////////////////////////////////////////////////////////////
 typedef pcl::Normal Normal;
 typedef pcl::PointCloud<pcl::Normal> NormalCloud;
 typedef NormalCloud::Ptr NormalCloudPtr;
@@ -18,50 +28,85 @@ struct PointStreamPoint {
   float r, g, b, color;
 };
 
-
-/**
 //////////////////////////////////////////////////////////////////////////////
-template <typename T>
-class AsioBuffer {
+class PointStreamPacket {
 public:
- 
-  explicit AsioBuffer()
-    : data_(new std::vector<T>())
-    , buffer_(asio::buffer(*data_))
-  {
+  enum PacketType : std::int8_t {
+      Unknown = -1,
+      Version,
+      ParameSet,
+      ParamGet,
+      PointCloudStart
+  };
+  enum { kHeaderLengthBytes   = sizeof(std::int8_t) + sizeof(std::size_t) };
+  enum { kMaxPayloadBytes = 512 - kHeaderLengthBytes };
+
+  // Convenience constructor for simple types
+  PointStreamPacket(PacketType t) : type(t) {
+    
+    // Pack for known types
+    if (type == Version) {
+      Pack(type, &kCurrentVersion, sizeof(kCurrentVersion));
+    }
   }
 
-  void push_back(const T& p) {
-    data_->push_back(p);
+  // Default constructor
+  PointStreamPacket() : type(Unknown), payload_size(0) {
   }
 
-  void clear() {
-    data_->clear();
+  unsigned char* Payload() {
+    return payload + kHeaderLengthBytes;
   }
 
-  // Implement the ConstBufferSequence requirements.
-  typedef asio::const_buffer value_type;
-  typedef const asio::const_buffer* const_iterator;
-  const asio::const_buffer* begin() const { return &buffer_; }
-  const asio::const_buffer* end() const { return &buffer_ + 1; }
+  std::size_t PayloadSize() const {
+    return payload_size;
+  }
+
+  std::size_t Size() const {
+    return kHeaderLengthBytes + PayloadSize();
+  }
+
+  unsigned char* Raw() {
+    return payload;
+  }
+
+  PacketType Type() const {
+    return type;
+  }
+
+  void Unpack() {
+    type = *((PacketType*)payload);
+    payload_size = *((std::size_t*)(payload + sizeof(std::int8_t)));
+    payload_size = std::min<std::size_t>(payload_size, kMaxPayloadBytes);
+  }
+
+  void Reset() {
+    type = Unknown;
+    payload_size = 0;
+    std::memset(Payload(), 0, kMaxPayloadBytes);
+  }
+
+  void Pack(PacketType t, void* data, std::size_t data_len) {
+    type = t;
+    payload_size = std::min<std::size_t>(data_len, kMaxPayloadBytes);
+
+    // get the actual data in the payload part of the buffer
+    std::memcpy(Payload(), data, payload_size);
+    // put the header together
+    *((PacketType*)payload) = t;
+    *((std::size_t*)(payload + sizeof(std::int8_t)))  = payload_size;
+
+  }
+
 
 private:
-  std::shared_ptr<std::vector<T>> data_;
-  asio::const_buffer buffer_;
-};
+  PacketType type;
+  std::size_t payload_size;
+  unsigned char payload[ kHeaderLengthBytes +  kMaxPayloadBytes ];
 
-//typedef AsioBuffer<PointStreamPoint> PointStreamPointBuffer;
-**/
+};
 
 typedef std::vector<PointStreamPoint> PointStreamPointBuffer;
 
 
-
-
-//////////////////////////////////////////////////////////////////////////////
-// Helper function to pack a 32-bit color
-inline float pack_color(uint8_t r, uint8_t g, uint8_t b) {
-  int32_t rgb = ((uint32_t)r << 16 | (uint32_t)g << 8 | (uint32_t)b);
-  return *reinterpret_cast<float*>(&rgb);
-}
 

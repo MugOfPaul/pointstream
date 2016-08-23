@@ -19,11 +19,11 @@ static short kFRAME_HEIGHT  = 424;
 
 void DeviceKinect::Update() {
 
-  m_Processor->BeginFrame();
+  processor->BeginFrame();
 
   // For each connected device, sync and register the frames
   std::map<std::string, DeviceBundle*>::iterator iter;
-  for (iter = m_Devices.begin(); iter != m_Devices.end(); ++iter) {
+  for (iter = devices.begin(); iter != devices.end(); ++iter) {
 
     libfreenect2::Frame undistorted(kFRAME_WIDTH, kFRAME_HEIGHT, 4);
     libfreenect2::Frame registered(kFRAME_WIDTH, kFRAME_HEIGHT, 4);
@@ -62,13 +62,13 @@ void DeviceKinect::Update() {
         if (z < min_z) min_z = z;
 
         int pt = (r * h) + c;
-        m_Processor->SubmitPoint(pt, x, -y, z, frgb);
+        processor->SubmitPoint(pt, x, -y, z, frgb);
       }
     }
     dvc->listener->release(frames);
   }
 
-  m_Processor->EndFrame();
+  processor->EndFrame();
   /**/
 }
 
@@ -85,7 +85,7 @@ DeviceKinect::~DeviceKinect() {
 
   // clean up all of our resources
   std::map<std::string, DeviceBundle*>::iterator iter;
-  for (iter = m_Devices.begin(); iter != m_Devices.end(); ++iter) {
+  for (iter = devices.begin(); iter != devices.end(); ++iter) {
     
     DeviceBundle* dvc = iter->second;
     dvc->device->stop();
@@ -108,21 +108,21 @@ void DeviceKinect::Initialize() {
 
   //libfreenect2::setGlobalLogger(libfreenect2::createConsoleLogger(libfreenect2::Logger::Debug));
 
-  int numDevices = m_Freenect.enumerateDevices();
+  int numDevices = freenect.enumerateDevices();
   if (numDevices == 0)
   {
     std::cout << "no device connected!" << std::endl;
     return;
   } 
 
-  // build our device map and initialize the m_Devices
+  // build our device map and initialize the devices
   for (int i = 0; i < numDevices; i++) {
     
     DeviceBundle* dvcBundle = new DeviceBundle;
     dvcBundle->pipeline = new libfreenect2::OpenCLPacketPipeline();
     dvcBundle->listener = new libfreenect2::SyncMultiFrameListener(libfreenect2::Frame::Color | libfreenect2::Frame::Ir | libfreenect2::Frame::Depth);
-    dvcBundle->device = m_Freenect.openDevice(i, dvcBundle->pipeline);
-    m_Devices[dvcBundle->device->getSerialNumber()] = dvcBundle;
+    dvcBundle->device = freenect.openDevice(i, dvcBundle->pipeline);
+    devices[dvcBundle->device->getSerialNumber()] = dvcBundle;
     
     libfreenect2::Freenect2Device *dev = dvcBundle->device;
     std::cout << "Initializing Device [" << i << "]: " << dev->getSerialNumber() << std::endl;
@@ -134,5 +134,5 @@ void DeviceKinect::Initialize() {
 
   }/**/
 
-  m_Processor->Initialize(kFRAME_WIDTH, kFRAME_HEIGHT);
+  processor->Initialize(kFRAME_WIDTH, kFRAME_HEIGHT);
 }

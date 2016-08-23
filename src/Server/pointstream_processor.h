@@ -15,8 +15,8 @@ public:
 
 private:
   void RunFilters();
-  ColorPointCloudPtr m_RawCloud = NULL;      
-  ColorPointCloudPtr m_FilterCloud = NULL;  
+  ColorPointCloudPtr raw_cloud = NULL;      
+  ColorPointCloudPtr filter_cloud = NULL;  
   std::mutex filter_cloud_mutex;
 
 };

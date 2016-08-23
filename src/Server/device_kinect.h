@@ -28,6 +28,6 @@ class DeviceKinect : public DeviceInterface {
     void Update();
 
   private:
-    libfreenect2::Freenect2 m_Freenect;
-    std::map<std::string,DeviceBundle*> m_Devices;
+    libfreenect2::Freenect2 freenect;
+    std::map<std::string,DeviceBundle*> devices;
 };

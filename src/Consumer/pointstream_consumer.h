@@ -1,6 +1,6 @@
 #pragma once
 
-
+#include "pointstream_common.h"
 #include <asio.hpp>
 #include <memory>
 
@@ -11,14 +11,19 @@ public:
   PointStreamConsumer();
   virtual ~PointStreamConsumer();
   void Start(std::string& host, short port);
-  void Stop();
-  void Read();
   void Update();
+  void Stop();
+
+private:
+  void ProcessFullPacket();
+  void ReadPacketPayload();
+  void ReadNewPacket();
+  void Write(PointStreamPacket& packet);
+  void SendVersion();
+
  
 private:
- 
-  short port;
   asio::io_service          io_service;
   asio::ip::tcp::socket     socket; 
-
+  PointStreamPacket         scratch_packet;
 };

@@ -19,7 +19,7 @@ enum { max_length = 1024 };
 
 DEFINE_string(host, "localhost", "single resolvable network address to connect to");
 DEFINE_int32(port, 6969, "port to connect to");
-DEFINE_bool(viewer, true, "run the visualizer");
+DEFINE_bool(viewer, false, "run the visualizer");
 
 std::atomic<int> Running(1);
 std::vector<std::thread> threads;
@@ -29,7 +29,7 @@ std::unique_ptr<PointStreamConsumer> consumer = nullptr;
 
 // Visualizer 
 std::unique_ptr<pcl::visualization::PCLVisualizer> viewer = NULL;
-const char* kCLOUD_ID = "PointStream";
+const char* kCloudId = "PointStream";
 
 ColorPointCloudPtr cloud = NULL;   // Filtered cloud received
 std::mutex cloud_mutex;     // locking guard for reading/writing the latest point cloud
@@ -51,8 +51,8 @@ void InitVisualizer() {
   cloud->is_dense = false;
 
   viewer = std::unique_ptr<pcl::visualization::PCLVisualizer>(new pcl::visualization::PCLVisualizer("PointStream Client Visualizer"));
-  viewer->addPointCloud(cloud, kCLOUD_ID);
-  viewer->setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 2, kCLOUD_ID);
+  viewer->addPointCloud(cloud, kCloudId);
+  viewer->setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 2, kCloudId);
   viewer->initCameraParameters();
   viewer->setShowFPS(true);  
 }
@@ -62,14 +62,17 @@ void InitVisualizer() {
  * Set up the Network
  */
  void NetworkLoop() {
+  consumer = std::unique_ptr<PointStreamConsumer>(new PointStreamConsumer());
+  consumer->Start(FLAGS_host, FLAGS_port);
+
   while (Running == 1) {
-    consumer->Update();
+      consumer->Update();
   }
+
+  consumer->Stop();
 }
 
 void InitNetwork() {
-  consumer = std::unique_ptr<PointStreamConsumer>(new PointStreamConsumer());
-  consumer->Start(FLAGS_host, FLAGS_port);
   threads.push_back(std::thread(NetworkLoop));
 }
 
@@ -117,7 +120,7 @@ int main(int argc, char* argv[])
     while (Running == 1) {
       if (viewer) {
         std::lock_guard<std::mutex> lock(cloud_mutex);
-        viewer->updatePointCloud(cloud, kCLOUD_ID);
+        viewer->updatePointCloud(cloud, kCloudId);
         viewer->spinOnce(12);
       } else {
         std::this_thread::sleep_for(std::chrono::milliseconds(16));

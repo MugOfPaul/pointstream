@@ -5,11 +5,11 @@
 
 class DeviceInterface {
   public:
-    DeviceInterface(std::shared_ptr<PointStreamProcessor> proc):m_Processor(proc) { }
-    virtual ~DeviceInterface() { m_Processor = nullptr; }
+    DeviceInterface(std::shared_ptr<PointStreamProcessor> proc):processor(proc) { }
+    virtual ~DeviceInterface() { processor = nullptr; }
     virtual void Initialize() = 0;
     virtual void Update() = 0;
 
   protected:
-    std::shared_ptr<PointStreamProcessor> m_Processor;
+    std::shared_ptr<PointStreamProcessor> processor;
 };

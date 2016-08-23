@@ -13,10 +13,11 @@ class PointStreamServer  {
 public:
   PointStreamServer(short port);
   virtual ~PointStreamServer();
-  void StartListening();
-  void Stop();
+  void Start();
   void Update();
+  void Stop();
   void RemoveConnection(PointStreamConnection* conn);
+
 private:
   void RunAccept();
 
@@ -33,15 +34,21 @@ private:
 //////////////////////////////////////////////////////////////////////////////
 class PointStreamConnection : public std::enable_shared_from_this<PointStreamConnection> {
 public:
-  PointStreamConnection(PointStreamServer* server, asio::ip::tcp::socket s);
+  PointStreamConnection(int id, PointStreamServer* server, asio::ip::tcp::socket s);
   virtual ~PointStreamConnection();
   void Start();
   asio::ip::tcp::socket& Socket() { return socket; }
 
-  void Read();
-  void AsyncWrite(PointStreamPointBuffer& buffer);
+private:
+  void ReadNewPacket();
+  void ReadPacketPayload();
+  void ProcessFullPacket();
+  void Write(PointStreamPacket& packet);
+  void SendVersion();
 
 private:
-  PointStreamServer* server;
+  int id;
+  PointStreamServer*      server;
   asio::ip::tcp::socket   socket; 
+  PointStreamPacket       scratch_packet;
 };
