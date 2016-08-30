@@ -119,8 +119,28 @@ int main(int argc, char* argv[])
     // On the main thread, update the visualizer
     while (Running == 1) {
       if (viewer) {
-        std::lock_guard<std::mutex> lock(cloud_mutex);
-        viewer->updatePointCloud(cloud, kCloudId);
+        
+          if (consumer != nullptr) {
+            std::lock_guard<std::mutex> lock(cloud_mutex);
+
+            // Copy the points from the network side
+            PointStreamPointBuffer temp(consumer->GetPoints());
+          
+            if (temp.size() > 0) {
+              cloud->clear();
+
+              for (PointStreamPointBuffer::iterator iter = temp.begin(); iter != temp.end(); ++iter) {
+                ColorPoint pcl_point;
+                pcl_point.x   = iter->x;
+                pcl_point.y   = iter->y;
+                pcl_point.z   = iter->z;
+                pcl_point.rgb = iter->rgb;
+                cloud->push_back(pcl_point);
+              }
+              viewer->updatePointCloud(cloud, kCloudId);
+            }
+          }
+          
         viewer->spinOnce(12);
       } else {
         std::this_thread::sleep_for(std::chrono::milliseconds(16));

@@ -42,7 +42,7 @@ void PointStreamProcessor::Initialize(short w, short h) {
 
   filterPassThrough_.setInputCloud(raw_cloud); // first filter so it takes the raw cloud
   filterPassThrough_.setFilterFieldName("z"); 
-  filterPassThrough_.setFilterLimits(0.001, 10);
+  filterPassThrough_.setFilterLimits(0.0001, 5);
   filterPassThrough_.setKeepOrganized(true); // this keeps the outliers and sets them to NaN
 
   filterVoxel_.setInputCloud(filter_cloud);

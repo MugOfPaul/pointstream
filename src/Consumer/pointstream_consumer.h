@@ -3,6 +3,7 @@
 #include "pointstream_common.h"
 #include <asio.hpp>
 #include <memory>
+#include <queue>
 
 
 //////////////////////////////////////////////////////////////////////////////
@@ -14,16 +15,32 @@ public:
   void Update();
   void Stop();
 
+  PointStreamPointBuffer& GetPoints();
+
 private:
-  void ProcessFullPacket();
+  void ProcessFullPacket(PointStreamCommandPacket& packet);
   void ReadPacketPayload();
   void ReadNewPacket();
-  void Write(PointStreamPacket& packet);
+  void ReadDataStream();
+  void Write(PointStreamCommandPacket& packet);
   void SendVersion();
 
  
 private:
   asio::io_service          io_service;
+
+  // TCP stuff
   asio::ip::tcp::socket     socket; 
-  PointStreamPacket         scratch_packet;
+  PointStreamCommandPacket         scratch_packet;
+  std::queue<PointStreamCommandPacket> packets;
+
+  //UDP stuff
+  asio::ip::udp::socket               data_socket;
+  PointStreamPointBuffer*             data_buffer;
+  PointStreamPointBuffer              scratch_buffers[2];
+  unsigned char                       scratch_buffer_index;
+  std::mutex                          data_buffer_mutex;
+  int                                 data_points_to_read;
+  unsigned char                       chunk_buffer[kMaxPointsInMTU * sizeof(PointStreamPoint)];
+
 };

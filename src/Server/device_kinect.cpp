@@ -93,7 +93,7 @@ DeviceKinect::~DeviceKinect() {
 
     delete dvc->listener;
     delete dvc->registration;
-    //delete dvc->pipeline; // causes segfault
+    delete dvc->pipeline; // causes segfault
     delete dvc;
   }
 }

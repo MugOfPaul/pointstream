@@ -92,11 +92,25 @@ void DeviceInterfaceLoop() {
   while (Running == 1) {
     if (interface) {
         interface->Update();   
-    }
-  }
 
-  if (viewer) {
-    viewer->close();
+        //TODO: figure out when/where to do this conversion
+        ColorPointCloudPtr pcl_points = processor->GetLatestCloudFiltered();
+
+        PointStreamPointBuffer points;
+        unsigned int count = 0;
+
+        for (auto p : *pcl_points) {
+          PointStreamPoint point;
+          point.index = count++;
+          point.x = p.x;
+          point.y = p.y;
+          point.z = p.z;
+          point.rgb = p.rgb;
+          points.push_back(point);
+        }
+
+        server->SetOutgoingPointBuffer(points);
+    }
   }
 }
 
@@ -160,10 +174,16 @@ void Startup() {
  */
 void Shutdown() {
   std::cout << "Full Shutdown." << std::endl;
+
+  interface.release();
+
   for (auto& th : threads) { th.join(); }
   threads.clear();
 
-  interface.release();
+  if (viewer) {
+    viewer->close();
+  }
+
   viewer.release();
   server.release();
 

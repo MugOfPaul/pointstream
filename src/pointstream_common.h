@@ -3,7 +3,7 @@
 #include <pcl/common/common_headers.h>
 #include <asio.hpp>
 
-static double kCurrentVersion = 0.1;
+static const double kCurrentVersion = 0.1;
 
 //////////////////////////////////////////////////////////////////////////////
 // Helper function to pack a 32-bit color
@@ -11,6 +11,14 @@ inline float pack_color(uint8_t r, uint8_t g, uint8_t b) {
   int32_t rgb = ((uint32_t)r << 16 | (uint32_t)g << 8 | (uint32_t)b);
   return *reinterpret_cast<float*>(&rgb);
 }
+
+//////////////////////////////////////////////////////////////////////////////
+struct PointStreamPoint {
+  unsigned int index;
+  float x, y, z, rgb;
+};
+
+static const unsigned int kMaxPointsInMTU = 512 / sizeof(PointStreamPoint);
 
 //////////////////////////////////////////////////////////////////////////////
 typedef pcl::Normal Normal;
@@ -22,36 +30,44 @@ typedef pcl::PointCloud<ColorPoint> ColorPointCloud;
 typedef ColorPointCloud::Ptr ColorPointCloudPtr;
 
 
+typedef std::vector<PointStreamPoint> PointStreamPointBuffer;
+
+
 //////////////////////////////////////////////////////////////////////////////
-struct PointStreamPoint {
-  unsigned int index;
-  float r, g, b, color;
+struct DataConnectionInfo
+{
+    short port;
+    char  address[512];
+};
+
+struct PointCloudInfo
+{
+    unsigned int number_points;
 };
 
 //////////////////////////////////////////////////////////////////////////////
-class PointStreamPacket {
+class PointStreamCommandPacket {
 public:
   enum PacketType : std::int8_t {
       Unknown = -1,
       Version,
-      ParameSet,
-      ParamGet,
-      PointCloudStart
+      DataConnection,
+      PointCloudInfo
   };
   enum { kHeaderLengthBytes   = sizeof(std::int8_t) + sizeof(std::size_t) };
-  enum { kMaxPayloadBytes = 512 - kHeaderLengthBytes };
+  enum { kMaxPayloadBytes = 1024 - kHeaderLengthBytes };
 
   // Convenience constructor for simple types
-  PointStreamPacket(PacketType t) : type(t) {
+  PointStreamCommandPacket(PacketType t) : type(t) {
     
     // Pack for known types
     if (type == Version) {
-      Pack(type, &kCurrentVersion, sizeof(kCurrentVersion));
+      Pack(type, (void*)&kCurrentVersion, sizeof(kCurrentVersion));
     }
   }
 
   // Default constructor
-  PointStreamPacket() : type(Unknown), payload_size(0) {
+  PointStreamCommandPacket() : type(Unknown), payload_size(0) {
   }
 
   unsigned char* Payload() {
@@ -106,7 +122,6 @@ private:
 
 };
 
-typedef std::vector<PointStreamPoint> PointStreamPointBuffer;
 
 
 
